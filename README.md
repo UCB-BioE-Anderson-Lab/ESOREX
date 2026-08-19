@@ -20,6 +20,21 @@ repository itself.
 
 ---
 
+## Quickstart
+
+Run ESOREX on the TyrB dataset in your browser, no install required:
+
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/UCB-BioE-Anderson-Lab/ESOREX/blob/main/notebooks/tyrb_quickstart.ipynb)
+
+The [`notebooks/tyrb_quickstart.ipynb`](notebooks/tyrb_quickstart.ipynb) notebook trains the
+energetic model on the 9 natural amino-acid substrates of *E. coli* TyrB and predicts 14 held-out
+unnatural analogs, reporting for each whether the prediction is **determined** by the data or an
+**extrapolation** beyond it. It runs in about a minute on a free Colab CPU.
+
+For a local install instead, see [Installation](#installation) below.
+
+---
+
 ## Worked examples
 
 Two end-to-end vignettes walk through the model on real enzymes, the data, the representation, what the model learns about the active site, and how it does:
