@@ -1,0 +1,148 @@
+# Ignore Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Ignore C extensions
+*.so
+
+# Ignore Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Ignore PyInstaller files
+*.manifest
+*.spec
+
+# Ignore Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Ignore Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# Ignore Translations
+*.mo
+*.pot
+
+# Ignore Django stuff:
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+
+# Ignore Flask stuff:
+instance/
+.webassets-cache
+
+# Ignore Scrapy stuff:
+.scrapy
+
+# Ignore Sphinx documentation
+docs/_build/
+
+# Ignore PyBuilder
+.pybuilder/
+target/
+
+# Ignore Jupyter Notebook
+.ipynb_checkpoints
+
+# Ignore IPython
+profile_default/
+ipython_config.py
+
+# Ignore pyenv
+.python-version
+
+# Ignore Conda and venv environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+3.10/
+Use/
+
+# Ignore Spyder project settings
+.spyderproject
+.spyproject
+
+# Ignore Rope project settings
+.ropeproject
+
+# Ignore mkdocs documentation
+/site
+
+# Ignore mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Ignore Pyre type checker
+.pyre/
+
+# Ignore pytype static type analyzer
+.pytype/
+
+# Ignore Cython debug symbols
+cython_debug/
+
+# Ignore system-specific files
+.DS_Store
+**/.DS_Store
+*.log
+*.sqlite
+*.db
+
+# Ignore top-level output directory only
+/output/
+*.png
+
+# EnzymeMap pipeline temp data — downloaded and generated locally, never committed
+data/raw/
+data/processed/
+data/error/
+
+# Benchmark and reference datasets are committed (e.g. data/transaminases/)
+# Do not add blanket data/ ignore here
+
+# Local rendered doc preview and scratch worktrees, never committed
+.docsite/
+.claude/worktrees/
+
+# Excluded from the public release (kept in the private development repo):
+#   large KEGG background cache, copyrighted source PDFs, binary logo source.
+data/kegg_background/
+*.pdf
+*.ai

@@ -1,0 +1,16 @@
+rdkit
+pandas
+numpy<2
+networkx
+CGRtools
+scikit-learn
+# Pin to 2.1.0: this version contains the corrected reactive-center logic.
+# 2.1.1 reverted that fix to avoid breaking hardcoded EVODEX.2 IDs in the
+# paper notebooks; we do not depend on those notebooks, so we take the fix.
+evodex==2.1.0
+rxnmapper
+jupyter
+matplotlib
+seaborn
+tqdm
+pytest

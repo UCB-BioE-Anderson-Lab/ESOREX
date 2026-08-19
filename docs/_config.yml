@@ -1,0 +1,8 @@
+# GitHub Pages configuration for the ESOREX documentation site.
+# Publish from the /docs folder on the main branch (Settings -> Pages -> Source: /docs).
+# docs/index.md is the site home; each concept page carries its own prev/next footer.
+title: ESOREX
+description: Enzyme substrate specificity as free energy
+theme: jekyll-theme-cayman
+# For a sidebar/nav upgrade later, switch to a docs theme such as just-the-docs
+# (remote_theme: just-the-docs/just-the-docs) and add front matter to each page.
