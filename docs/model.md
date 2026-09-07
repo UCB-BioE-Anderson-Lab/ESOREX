@@ -341,7 +341,7 @@ hull. A candidate can lie far outside the range of anything measured and still b
 `determined` should not be read as "interpolation," nor undetermined as "extrapolation." It reports
 identifiability, not proximity.
 
-For the TyrB model, `X` is 9 × 67 with rank 9, `null_dim` 58, maximum residual 1.3e-14. Because the
+For the TyrB model, `X` is 9 × 67 with rank 9, `null_dim` 58, and a maximum residual below 10⁻¹⁴ (the exact value is float noise and varies with the linear-algebra backend). Because the
 rank equals the number of substrates, `Xw = E` is solvable for *any* rate vector at all: exact
 reproduction on these nine substrates is a property of the geometry, not evidence that the feature set
 is right. Exactness becomes an achievement, and `determined` becomes informative, only once
