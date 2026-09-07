@@ -30,8 +30,10 @@ python experiments/demonstrations/generate_tyrb.py
 
 It trains the energetic model on the 9 natural amino-acid substrates of *E. coli* TyrB and predicts
 14 held-out unnatural analogs, reporting for each whether the prediction is **determined** by the
-data or an **extrapolation** beyond it. It refreshes the figures in `assets/demonstrations/tyrb/`
-and writes a full report to `experiments/transaminases/tyrb_energetic_report.html`.
+data or an **extrapolation** beyond it. It also screens a panel of molecules one edit away from
+phenylalanine, including its mirror image, which the enzyme's operators reject outright. It
+refreshes the figures in `assets/demonstrations/tyrb/` and writes a full report to
+`experiments/transaminases/tyrb_energetic_report.html`.
 
 The same result is written up, with the figures, in
 [docs/demonstrations/tyrb_extrapolation.md](docs/demonstrations/tyrb_extrapolation.md).
@@ -67,8 +69,10 @@ Given atom-mapped training reactions and measured activity values, ESOREX:
 
 **Inputs:** pre-mapped reaction SMILES with measured rates (kcat/KM, kf/KD, or relative rates).
 
-**Output:** a predicted rate per candidate, each tagged determined or extrapolation, plus a novelty
-score measuring how far outside the training support the prediction reaches.
+**Output:** for a candidate the mechanism does not apply to, **rate 0** — the enzyme's reaction
+cannot be written on it, so it is rejected rather than scored low. For everything that passes, a
+predicted rate tagged determined or extrapolation, plus a novelty score measuring how far outside
+the training support the prediction reaches.
 
 A typical use case: 1 to 20 measured substrates for one enzyme, screened against thousands
 of metabolites. At EVODEX D-level this narrows a few thousand candidate metabolites to hundreds

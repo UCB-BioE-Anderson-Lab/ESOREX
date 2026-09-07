@@ -9,8 +9,12 @@ modeling choices; what is avoided is a named-group vocabulary, not modeling. Sec
 **addressed positionally** on a three-scale decomposition, **atom → subdomain → passenger**, so the
 model can attribute an effect at whatever resolution the data actually support. The decomposition is
 **reconstructable**: the constitutional and electronic structure rebuilds from skeleton-plus-deltas
-exactly, up to the stereochemistry that is deliberately excluded (see [Stereochemistry](#stereochemistry)),
-so nothing but that excluded information is lost before the model sees it.
+exactly, up to stereochemistry, which the feature set does not yet cover (see
+[Stereochemistry](#stereochemistry)), so nothing but that is lost before the model sees it. This shared
+description is also what makes prediction possible at all: because every substrate is addressed the
+same way, a candidate the enzyme has never seen lands in the same coordinate system as the measured
+ones and can be expressed in terms of them. See
+[what the model holds](model.md#what-the-model-holds-and-where-a-prediction-comes-from).
 
 ## The carbon skeleton
 
@@ -192,12 +196,21 @@ through an invented carbon-count threshold.
 
 ## Stereochemistry
 
-Stereochemistry is retained in the substrate-to-skeleton mapping but is **not** yet part of the
-feature set or the reconstruction round-trip: the current model resolves constitution and electronic
-structure, and which stereochemical distinctions become features, at which positional resolution, is
-a deliberate later decision rather than an accidental omission. As with any feature, a configuration
-difference acquires predictive weight only when the training set contains substrates that differ in
+Stereochemistry is retained in the substrate-to-skeleton mapping but does **not** yet reach the
+feature set or the reconstruction round-trip. The current model resolves constitution and electronic
+structure, so two substrates differing only in configuration are indistinguishable to it. Handling
+stereochemistry properly is the intended end state; which distinctions should become features, and at
+what positional resolution, has not been worked through yet. As with any feature, a configuration
+difference can acquire predictive weight only once the training set contains substrates that differ in
 exactly that way. See [Known limitations](../README.md#known-limitations).
+
+What the feature set does not do, the mechanistic gate does. Operators extracted from mapped
+reactions carry the reacting centre's configuration whenever the training reactions had one, and
+matching enforces it, so a mirror image is refused as infeasible rather than scored: for TyrB,
+D-phenylalanine returns rate 0. Configuration therefore decides **whether** a molecule reacts, while
+the feature set decides **how fast**, and it is only the latter that is still stereo-blind. A
+substrate drawn without its configuration does not match a stereospecific operator either, since an
+unstated centre cannot be assumed to be the reactive one.
 
 ---
 

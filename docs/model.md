@@ -177,6 +177,62 @@ representation that still reproduces the rates exactly" describes the *labeling*
 the guiding principle, **keep every distinction the data resolve, at the most abstract level
 consistent with resolving it**.
 
+**The channel restriction in step 1 has a cost, and it is large.** Because merging happens only
+within a channel, two variables with identical presence patterns stay separate whenever they describe
+different physical quantities. In the TyrB model that leaves 67 columns carrying only **27 distinct
+patterns**: 40 columns duplicate another column exactly and are kept apart on purpose. Merging on
+pattern alone would reduce the variables to 27 and the null space from 58 dimensions to 18. So most
+of the reported underdetermination is this modelling choice rather than a fact about the data, and
+`null_dim` should be read with that in mind. The choice is still the right one: fusing a size feature
+with an electronic one because nine substrates happen not to separate them would bake a coincidence
+into the representation, and no later measurement could undo it.
+
+## What the model holds, and where a prediction comes from
+
+ESOREX turns the measured rates into a set of per-feature energies. The conversion is **linear and
+lossless**: the energies are computed from the rates, and the rates compute straight back from the
+energies. No information is added and none is thrown away.
+
+Re-expressing the same information is not busywork. It buys three things the rate table cannot give
+on its own:
+
+- **Exact reproduction.** Every training rate comes back out of the model unchanged.
+- **Attribution.** Each rate is split across the parts of the substrate that produced it. A measured
+  rate is one number for a whole molecule; `atom_contributions` turns it into a per-atom map.
+- **A shared coordinate system.** Measured and unmeasured molecules end up described the same way,
+  which is what makes prediction possible at all.
+
+**Where a prediction comes from.** The work is done by the feature description, not by the fitted
+energies. Because every substrate is described in the same vocabulary, on the same carbon skeleton
+with the same positional addresses, a candidate lands in the same coordinate system as the measured
+substrates. Once it is there it can be expressed as a combination of substrates that *were* measured,
+and its predicted energy is that same combination of their measured energies.
+
+In the TyrB model, the prediction for 2-aminooctanoate works out to roughly 0.36 of leucine plus 0.31
+of alanine plus 0.17 of phenylalanine, with smaller contributions from the rest. A prediction is not
+the model reasoning about chemistry. It is the measured energies carried to a new molecule along
+routes the [representation](representation.md) lays out.
+
+**Where the assumption enters.** A candidate usually carries features the training measurements could
+never separate from one another. The model handles those by assuming they contribute nothing. That is
+a convention, not something the data showed, and it is the source of every prediction that goes beyond
+what was measured. The next section states the rule exactly and the flag that reports it.
+
+**So there are two operations here, not one.** The fit is lossless. The prediction requires an
+assumption. Keeping them apart is what lets the model say when it does not know.
+
+**"Lossless" is narrow, and only ever describes the fit.** It is the last step of four:
+
+```
+molecule  ->  features  ->  collapsed variables  ->  energies  <->  rates
+          lossy         lossy                     LOSSLESS
+```
+
+The featurizer does not currently represent stereochemistry, and cannot represent chemistry outside
+its vocabulary. The collapse permanently merges variables the data cannot separate and absorbs into `E₀`
+anything every substrate carries. Only the final conversion round-trips, and prediction then adds a
+fourth lossy step of its own.
+
 ## Prediction and provenance
 
 To predict a new substrate `Q`, ESOREX builds its feature vector `q` (through the same collapse) and
@@ -247,6 +303,49 @@ validation; treat it as a qualitative honesty signal, not a guaranteed error bar
 - **Representation resolution.** Two substrates the featurizer cannot distinguish cannot be given
   different energies by any model. Exactness then depends on the [representation](representation.md), not
   on the learner.
+- **Chemistry outside the training vocabulary, where the flags invert.** The collapse builds its
+  variables from features the *training* substrates carry, so a feature no training substrate has
+  never becomes a variable, and a candidate carrying it is described as though it were absent. The
+  provenance flags then fail in the worst direction: such a candidate can be reported **determined**
+  with **novelty 0**. In the TyrB model, 4-nitrophenylalanine and phosphotyrosine both collapse onto
+  tyrosine's feature vector *exactly*, are flagged determined, and are both predicted at tyrosine's
+  measured `3.3e5`, against measured `8.9e4` and `7.9e4`. The flags cover unmeasured **combinations**
+  of known features; they do not cover unknown features.
+
+
+## Appendix: the linear algebra
+
+The statement in closed form, for anyone who wants to check it. Let `X` be the substrate-by-feature
+matrix (one row per training substrate, one column per collapsed variable, plus the intercept) and
+`E` the measured activation energies. ESOREX stores the minimum-norm solution `w_p = X⁺E`.
+
+When `X` has full row rank, `XX⁺ = I`, so `X(X⁺E) = E`. The map `E ↦ w_p` is then a **linear
+isomorphism from the space of measured energies onto `row(X)`**, with `X⁺` and `X` as inverses. That
+is the precise content of "linear and lossless," and note that it holds only at fixed `X` and only
+onto the row space. Equivalently: the exact-fitting weightings form the coset `w_p + ker(X)`, and
+`Rᵐ / ker(X) ≅ im(X)`; minimum norm selects the single representative lying in `row(X)`.
+
+Prediction is a linear functional of the measurements:
+
+```
+Ê(q) = q · w_p = (q X⁺) E
+```
+
+so every predicted energy, determined or not, is a weighted sum of the measured energies. The weights
+`a(q) = q X⁺` come from the representation and the training geometry; the values they combine come
+from experiment. Neither predicts anything on its own.
+
+`determined` is the statement `q_⊥ = 0`, where `q = q_∥ + q_⊥` splits the query along `row(X)` and
+`ker(X)`. This is a condition on the **linear span** of the training features, not on their convex
+hull. A candidate can lie far outside the range of anything measured and still be determined, so
+`determined` should not be read as "interpolation," nor undetermined as "extrapolation." It reports
+identifiability, not proximity.
+
+For the TyrB model, `X` is 9 × 67 with rank 9, `null_dim` 58, maximum residual 1.3e-14. Because the
+rank equals the number of substrates, `Xw = E` is solvable for *any* rate vector at all: exact
+reproduction on these nine substrates is a property of the geometry, not evidence that the feature set
+is right. Exactness becomes an achievement, and `determined` becomes informative, only once
+measurements outnumber the directions the features can distinguish.
 
 ---
 

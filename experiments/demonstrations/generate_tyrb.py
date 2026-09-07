@@ -23,7 +23,7 @@ sys.path.insert(0, str(ROOT))
 OUT = ROOT / "assets" / "demonstrations" / "tyrb"
 
 from rdkit import Chem
-from rdkit.Chem import AllChem, Draw
+from rdkit.Chem import AllChem, Draw, rdChemReactions
 from rdkit.Chem.Draw import rdMolDraw2D
 
 # ── constants ──────────────────────────────────────────────────────────────────
@@ -199,11 +199,15 @@ def _load_substrate_smiles():
 # trains that model on the natural amino acids, reads out what it has learned about
 # the enzyme, and tests it on the unnatural analogs.
 
-_AA_CORE = Chem.MolFromSmarts("[NX3][CX4H][CX3](=O)[OX2]")
-
-
-def _substrate_core(mol):
-    return set(mol.GetSubstructMatch(_AA_CORE))
+# The reactive core is NOT defined here.  It comes from the A-level mechanistic tree, via
+# esorex.enzyme_model.EnzymeModel, which locates it by the atom mapping of each substrate's
+# own partial reaction.  This file previously hardcoded
+#     _AA_CORE = Chem.MolFromSmarts("[NX3][CX4H][CX3](=O)[OX2]")
+# and never touched the mechanistic layer at all, which bypassed the pipeline and produced a
+# 5-atom core where the A-level reaction center is 1 atom (the alpha carbon).  A hardcoded
+# SMARTS is also ambiguous on this dataset: it cannot tell the backbone nitrogen from the
+# guanidinium nitrogen of arginine or the aniline nitrogen of 4-aminophenylalanine.
+_HAS_AA_BACKBONE = Chem.MolFromSmarts("[NX3][CX4H][CX3](=O)[OX2]")   # dataset filter only
 
 
 def _energetic_dataset():
@@ -223,18 +227,48 @@ def _energetic_dataset():
                 continue
             rate = _parse_float(row.get(ENZYME_COL, ""))
             mol = Chem.MolFromSmiles(smi.get(name, ""))
-            if rate is None or mol is None or not _substrate_core(mol):
+            if rate is None or mol is None or not mol.GetSubstructMatch(_HAS_AA_BACKBONE):
                 continue
             (nat if name in NATURALS else ana).append((name, mol, rate))
     return nat, ana
 
 
+MAPPED = ROOT / "experiments/transaminases/esorex_behavior/results/onuffer_mapped_reactions.csv"
+
+
+def _partial_reactions(names):
+    """The FULLY atom-mapped reaction for each named substrate, prepared for the pipeline.
+
+    Not `reaction_smiles_partial` from the curated CSV: that column is `partial_mapped`
+    (only the backbone carries maps), so prepare_reaction rejects it outright and the
+    leaving amine nitrogen is invisible to the operator extraction -- which collapses the
+    A-level reaction center to the alpha carbon alone.  The full mappings come from
+    scripts/map_reactions.py, which maps every heavy atom including the amine N (:1) and
+    the water oxygen (:6) that becomes the product ketone.
+    """
+    from esorex.reaction_preparation import prepare_reaction
+    by_name = {}
+    with MAPPED.open() as f:
+        for row in csv.DictReader(f):
+            if row.get("prepare_reaction_ok", "").strip() == "ok":
+                by_name[row["substrate"].strip()] = row["reaction_smiles_full"].strip()
+    missing = [n for n in names if n not in by_name]
+    if missing:
+        raise KeyError(f"no prepared full mapping for {missing}; rerun map_reactions.py")
+    return [prepare_reaction(by_name[n]) for n in names]
+
+
 def train_energetic_model():
-    from esorex.energetic_specificity import EnergeticSpecificityModel
+    """Train through the full pipeline: mechanistic tree -> A-level cores -> specificity.
+
+    Returns an EnzymeModel, so prediction carries the feasibility gate: model.predict(mol)
+    screens with the complete operators at the requested level (D by default) and returns
+    rate 0 for a compound the chemistry does not apply to, rather than a small number.
+    """
+    from esorex.enzyme_model import EnzymeModel, DEFAULT_LEVEL
     nat, ana = _energetic_dataset()
-    model = EnergeticSpecificityModel()
-    model.train([m for _, m, _ in nat], [_substrate_core(m) for _, m, _ in nat],
-                rates=[r for _, _, r in nat])
+    model = EnzymeModel()
+    model.train(_partial_reactions([n for n, _, _ in nat]), rates=[r for _, _, r in nat])
     return model, nat, ana
 
 
@@ -248,12 +282,13 @@ _PANEL = [
 _PANEL_SHORT = {"Arginine (mu = 0.2)": "Arginine"}
 
 
-def _paint_contrib(model, mol, core):
+def _paint_contrib(model, mol, core=None):
     """Per-atom shading values for the painted figure: each carbon from
     model.atom_contributions, each passenger heteroatom taking the mean of the carbons it
     hangs on.  Core (reaction-center) atoms are left out (drawn gray by the renderer)."""
-    core = set(core)
-    carbon = model.atom_contributions(mol, core)
+    # The core comes from the A-tree, not from the caller.
+    core = set(core) if core is not None else set(model.core_of(mol))
+    carbon = model.atom_contributions(mol)
     contrib = dict(carbon)
     for a in mol.GetAtoms():
         j = a.GetIdx()
@@ -313,8 +348,8 @@ def write_ensemble_svg(model, nat, out_path):
                           left=0.03, right=0.97)
     for k, (name, headline, sub) in enumerate(_PANEL):
         mol, rate = by_name[name]
-        core = _substrate_core(mol)
-        contrib = _paint_contrib(model, mol, core)
+        core = model.core_of(mol)
+        contrib = _paint_contrib(model, mol)
         img = render_mol(mol, contrib, core)
         ax = fig.add_subplot(gs[k // 2, k % 2])
         ax.imshow(img); ax.axis("off")
@@ -366,7 +401,7 @@ def write_energetic_predictions_svg(model, nat, ana, out_path):
 
     pts = []
     for name, mol, rate in ana:
-        p = model.predict(mol, _substrate_core(mol))
+        p = model.predict(mol)
         pts.append((name, rate, p.rate, p.determined))
     meas = np.array([p[1] for p in pts]); pred = np.array([p[2] for p in pts])
     rho, pval = stats.spearmanr(meas, pred)
@@ -416,7 +451,7 @@ def _worst_outlier(model, ana):
     """The single held-out substrate the model misreads most (largest |log rate error|)."""
     worst, we = None, -1.0
     for name, mol, rate in ana:
-        e = abs(_logerr(model.predict(mol, _substrate_core(mol)).rate, rate))
+        e = abs(_logerr(model.predict(mol).rate, rate))
         if e > we:
             we, worst = e, name
     return worst
@@ -426,21 +461,111 @@ def run_augmentation(nat, ana, outlier_name):
     """Add the outlier back into training, retrain, and measure the effect on every
     other test prediction: does inconsistent new data erode the model or refine it?"""
     outlier = next(t for t in ana if outlier_name in t[0])
-    base = _fit([(m, _substrate_core(m), r) for _, m, r in nat])
-    aug = _fit([(m, _substrate_core(m), r) for _, m, r in nat + [outlier]])
+    base = _fit(nat)
+    aug = _fit(nat + [outlier])
     before, after = {}, {}
     for name, mol, rate in ana:
-        before[name] = _logerr(base.predict(mol, _substrate_core(mol)).rate, rate)
-        after[name] = _logerr(aug.predict(mol, _substrate_core(mol)).rate, rate)
+        before[name] = _logerr(base.predict(mol).rate, rate)
+        after[name] = _logerr(aug.predict(mol).rate, rate)
     return dict(outlier=outlier[0], base=base, aug=aug, before=before, after=after,
                 aug_exact=aug.info["exact"], aug_coop=aug.info["cooperative_terms_added"])
 
 
 def _fit(triples):
-    from esorex.energetic_specificity import EnergeticSpecificityModel
-    m = EnergeticSpecificityModel()
-    m.train([t[0] for t in triples], [t[1] for t in triples], rates=[t[2] for t in triples])
+    """Refit through the same pipeline as train_energetic_model: the cores come from the
+    A-tree, so an augmented model is built exactly the way the base model was."""
+    from esorex.enzyme_model import EnzymeModel
+    m = EnzymeModel()
+    m.train(_partial_reactions([t[0] for t in triples]), rates=[t[2] for t in triples])
     return m
+
+
+# One edit from phenylalanine, and none of them can be transaminated.  Six remove one of
+# the things the enzyme's reaction needs: the primary amine that condenses with PLP, the
+# alpha-H that is abstracted, or the carboxyl.  D-phenylalanine removes nothing at all,
+# it is the same molecule with the opposite configuration, and the operators carry the
+# reacting centre's stereochemistry, so it is rejected too.  Nothing here is a
+# hand-written pattern; whether they react is decided by the trained operators.
+_NON_SUBSTRATES = [
+    ("D-Phenylalanine",    "N[C@H](Cc1ccccc1)C(=O)O",   "mirror image"),
+    ("Phenylacetate",      "OC(=O)Cc1ccccc1",           "no amine"),
+    ("3-Phenylpropionate", "OC(=O)CCc1ccccc1",          "amine \u2192 H"),
+    ("Phenyllactate",      "OC(=O)C(O)Cc1ccccc1",       "amine \u2192 hydroxyl"),
+    ("N-methyl-Phe",       "CNC(Cc1ccccc1)C(=O)O",      "amine is secondary"),
+    ("\u03b1-methyl-Phe",      "CC(N)(Cc1ccccc1)C(=O)O",    "\u03b1-H \u2192 methyl"),
+    ("\u03b2-Phenylalanine",   "OC(=O)CC(N)c1ccccc1",       "amine moved one carbon"),
+]
+
+
+def feasibility_panel(model, nat, level=None):
+    """[(label, mol, feasible, rate, note)] for phenylalanine and the near-misses."""
+    from esorex.enzyme_model import DEFAULT_LEVEL
+    level = level or DEFAULT_LEVEL
+    phe_mol, phe_rate = next((m, r) for n, m, r in nat if n == "Phenylalanine")
+    rows = [("L-Phenylalanine", phe_mol, True, phe_rate,
+             "amine, \u03b1-H and carboxyl all present")]
+    for name, smi, note in _NON_SUBSTRATES:
+        mol = Chem.MolFromSmiles(smi)
+        p = model.predict(mol, level=level)
+        rows.append((name, mol, p.feasible, p.rate, note))
+    return rows
+
+
+def write_feasibility_svg(model, nat, out_path, level=None):
+    """Draw phenylalanine beside the molecules the gate rejects, each a single edit from
+    it.  The verdicts come from the trained operators, not from any pattern written here."""
+    import io
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from PIL import Image
+    from rdkit.Chem import AllChem
+    from rdkit.Chem.Draw import rdMolDraw2D
+
+    from esorex.enzyme_model import DEFAULT_LEVEL
+    level = level or DEFAULT_LEVEL
+    rows = feasibility_panel(model, nat, level)
+
+    def render(mol, core, w_px=440, h_px=330):
+        mol = Chem.Mol(mol)
+        AllChem.Compute2DCoords(mol)
+        hi_atoms, hi_colors = [], {}
+        for i in (core or ()):
+            if i < mol.GetNumAtoms():
+                hi_atoms.append(i)
+                hi_colors[i] = (0.80, 0.90, 0.80)
+        d = rdMolDraw2D.MolDraw2DCairo(w_px, h_px)
+        o = d.drawOptions()
+        o.highlightRadius = 0.42
+        o.padding = 0.10
+        o.clearBackground = False
+        rdMolDraw2D.PrepareAndDrawMolecule(d, mol, highlightAtoms=hi_atoms,
+                                           highlightAtomColors=hi_colors, highlightBonds=[])
+        d.FinishDrawing()
+        return Image.open(io.BytesIO(d.GetDrawingText()))
+
+    fig = plt.figure(figsize=(11.4, 5.4))
+    gs = fig.add_gridspec(2, 4, hspace=0.42, wspace=0.02, top=0.87, bottom=0.06,
+                          left=0.02, right=0.98)
+    for k, (label, mol, feasible, rate, note) in enumerate(rows):
+        core = model.predict(mol, level=level).core if feasible else None
+        ax = fig.add_subplot(gs[k // 4, k % 4])
+        ax.imshow(render(mol, core)); ax.axis("off")
+        if feasible:
+            head, colour = f"{label}", "#2f6b3a"
+            sub = f"substrate  ·  k = {rate:.1e}"
+        else:
+            head, colour = f"{label}", "#8a2b0e"
+            sub = f"no operator match  ·  rate = {rate:g}"
+        ax.set_title(head, fontsize=10.5, fontweight="bold", color=colour, pad=2)
+        ax.text(0.5, -0.07, f"{note}\n{sub}", transform=ax.transAxes, ha="center",
+                va="top", fontsize=8.6, color="#444")
+    fig.suptitle(f"Stage one: what the level-{level} operators admit",
+                 fontsize=12.5, fontweight="bold", y=0.965)
+    fig.savefig(out_path, format="svg", bbox_inches="tight")
+    plt.close(fig)
+    print(f"  wrote {out_path}")
+    return rows
 
 
 def write_augmentation_svg(aug_result, out_path):
@@ -651,6 +776,34 @@ code{font-family:var(--mono);font-size:.9em;background:var(--accent-soft);color:
   constraint-based model is built to have: it never trades away a known fact to fit a new
   one, it widens the represented world to hold both.</p>
 
+ <h2><span class="n">07</span>What the enzyme will not touch</h2>
+ <p>Every substrate above is an L-\u03b1-amino acid, so a spread of intermediate rates can
+  read as the model being vague, softly ranking things that were all much the same to
+  begin with. It is not, and the reason is that specificity here is not decided by the
+  regression at all.</p>
+ <p>Prediction runs in two stages. Before any energy is computed, the complete operators
+  at the screening level are applied to the candidate: if none matches, the enzyme's
+  reaction cannot be written on that molecule and the answer is <b>rate&nbsp;0</b>, not a
+  small number. Only a molecule that passes reaches the specificity model. Each molecule
+  below keeps the benzyl side chain and removes one thing the reaction needs, the primary
+  amine that condenses with PLP, the \u03b1-H that is abstracted, or the carboxyl. The first
+  removes nothing at all: D-phenylalanine is the same molecule with the opposite
+  configuration at the reacting carbon, and the operators carry that centre's
+  stereochemistry, so the mirror image does not match either.</p>
+ <figure class="card-fig">%FEASIBILITY_SVG%
+  <figcaption>Phenylalanine and six molecules one edit away from it. The verdicts are the
+   trained operators', not a pattern written into the demonstration: the shaded atom on
+   phenylalanine is the reaction centre the matched operator locates, and it is the core
+   the specificity model then prices against.</figcaption>
+ </figure>
+ <table><thead><tr><th>molecule</th><th>change from Phe</th><th>operator match</th>
+  <th class="num">predicted rate</th></tr></thead>
+  <tbody>%FEASIBILITY_ROWS%</tbody></table>
+ <p>This is the half of specificity a rate cannot express. A model that only scores will
+  always return some number, and the smaller it is the more it invites being read as a
+  slow substrate. Here the boundary is categorical and it is not learned from the nine
+  measured rates: it is the mechanism the training reactions carry.</p>
+
  <div class="foot">TyrB (engineered tyrosine aminotransferase; Onuffer &amp; Kirsch, Protein Sci. 1995)
   · eTATase kf/KD · energetic ESOREX · train %NNAT% naturals → predict %NANA% analogs</div>
 </div></div>
@@ -664,7 +817,7 @@ def _inline_svg(path):
     return s[i:] if i >= 0 else s
 
 
-def write_report(model, nat, ana, stats, aug, out_path):
+def write_report(model, nat, ana, stats, aug, feasibility, out_path):
     """Assemble the TyrB story: the enzyme, how the model represents it, what it
     learned, how well it predicts, why it fails on one substrate, and what happens
     when that substrate is fed back in."""
@@ -707,6 +860,14 @@ def write_report(model, nat, ana, stats, aug, out_path):
         "%ENSEMBLE_SVG%": _inline_svg(OUT / "ensemble.svg"),
         "%PREDICTIONS_SVG%": _inline_svg(OUT / "predictions.svg"),
         "%AUGMENTATION_SVG%": _inline_svg(OUT / "augmentation.svg"),
+        "%FEASIBILITY_SVG%": _inline_svg(OUT / "feasibility.svg"),
+        "%FEASIBILITY_ROWS%": "".join(
+            f"<tr><td>{_x(label)}</td><td>{_x(note)}</td>"
+            f"<td>{'matches' if ok else 'no match'}</td>"
+            f"<td class='num'>{rate:.1e}</td></tr>" if ok else
+            f"<tr><td>{_x(label)}</td><td>{_x(note)}</td><td>no match</td>"
+            f"<td class='num'>0</td></tr>"
+            for label, _m, ok, rate, note in feasibility),
         "%TABLE_ROWS%": "".join(rows),
         "%OUTLIER%": outlier, "%OUT_ERR%": f"{out_err:+.1f}",
         "%TOO%": too, "%SIDE%": side,
@@ -754,9 +915,14 @@ def main():
     print(f"  outlier {aug['outlier']}: {aug['before'][aug['outlier']]:+.2f} -> "
           f"{aug['after'][aug['outlier']]:+.2f} (now training); aug exact={aug['aug_exact']}")
 
+    print("Screening the non-substrate panel through the feasibility gate...")
+    feasibility = write_feasibility_svg(model, nat, OUT / "feasibility.svg")
+    rejected = sum(1 for _l, _m, ok, _r, _n in feasibility if not ok)
+    print(f"  {rejected}/{len(feasibility) - 1} near-misses rejected, rate 0")
+
     print("Writing TyrB story report...")
     report_path = ROOT / "experiments" / "transaminases" / "tyrb_energetic_report.html"
-    write_report(model, nat, ana, stats, aug, report_path)
+    write_report(model, nat, ana, stats, aug, feasibility, report_path)
 
     print("\nAll assets written to:", OUT)
     print("Report:", report_path)

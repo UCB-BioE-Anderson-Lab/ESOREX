@@ -69,6 +69,13 @@ class EnergeticSpecificityModel:
         return self.info
 
     def predict(self, mol, core) -> Prediction:
+        if not core:
+            raise ValueError(
+                "empty reactive core: the specificity model prices a substrate relative to "
+                "its core, so an empty core has no meaning.  With no core the whole molecule "
+                "is described as a passenger hanging off a phantom centre and a number comes "
+                "back anyway.  Deciding that a molecule is not a substrate is the mechanistic "
+                "gate's job: use EnzymeModel.predict, which returns rate 0 for it.")
         q = self._collapse.transform(self._featurizer.transform_one(mol, core))
         E, determined, novelty = self._cs.predict_energy(q)
         return Prediction(E, float(rate_from_energy(E, self.RT)), determined, novelty)

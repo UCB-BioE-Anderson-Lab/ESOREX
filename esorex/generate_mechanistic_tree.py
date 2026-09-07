@@ -37,6 +37,7 @@ from collections import defaultdict
 from dataclasses import replace as dc_replace
 
 import networkx as nx
+from rdkit import Chem
 from rdkit.Chem import AllChem
 from rdkit.Chem.rdChemReactions import ChemicalReaction, ReactionToSmiles
 from CGRtools import smiles as cgr_smiles
@@ -229,6 +230,29 @@ def _collect_operators_by_level(tree) -> dict:
     return ops
 
 
+def _perceived(mol):
+    """A fragment molecule with real aromaticity perception.
+
+    Reactants parsed out of a SMIRKS are QUERY molecules: RDKit never perceives
+    atom-level aromaticity on those, so an aromatic ring comes back with aromatic BONDS
+    but non-aromatic ATOMS.  Downstream, carbon_featurize's pi-system detection reads
+    atom.GetIsAromatic(), so a phenylalanine fragment would featurize as though it had no
+    ring at all.  Round-tripping through canonical SMILES converts the query molecule into
+    an ordinary one, the same remedy reaction_preparation._parse_mol applies; removeHs
+    stays False so explicit hydrogens survive.  Callers must read atom indices from the
+    RETURNED molecule, since the round-trip may reorder atoms.
+    """
+    try:
+        m = Chem.Mol(mol)
+        Chem.SanitizeMol(m)
+    except Exception:
+        return mol
+    params = Chem.SmilesParserParams()
+    params.removeHs = False
+    plain = Chem.MolFromSmiles(Chem.MolToSmiles(m), params)
+    return plain if plain is not None else m
+
+
 def _compute_fragments(group: list[dict], a_op_smarts: str) -> list[dict]:
     """For each training reaction, identify the passenger atoms, reactant atoms
     whose map numbers are not covered by the A-level operator.
@@ -241,6 +265,10 @@ def _compute_fragments(group: list[dict], a_op_smarts: str) -> list[dict]:
     result: list[dict] = []
     for data in group:
         for mol in data['rxn'].GetReactants():
+            mol = _perceived(mol)
+            # Indices are read AFTER perception on purpose: the SMILES round-trip inside
+            # _perceived may reorder atoms, so indices taken from the query molecule would
+            # not address the molecule we hand out.
             op_indices = [a.GetIdx() for a in mol.GetAtoms() if a.GetAtomMapNum() in op_maps]
             passenger_indices = [a.GetIdx() for a in mol.GetAtoms() if a.GetAtomMapNum() not in op_maps]
             if op_indices and passenger_indices:
@@ -248,6 +276,11 @@ def _compute_fragments(group: list[dict], a_op_smarts: str) -> list[dict]:
                     'mol': mol,
                     'operator_indices': op_indices,
                     'passenger_indices': passenger_indices,
+                    # Which input reaction this fragment came from.  Fragment order is an
+                    # artefact of how partials are assigned to slots, not a contract, so a
+                    # caller pairing fragments with per-reaction measurements must use this
+                    # rather than position.
+                    'reaction_index': data.get('reaction_index'),
                 })
     return result
 
@@ -422,7 +455,7 @@ def generate_mechanistic_tree(reactions: list[ChemicalReaction]) -> list[Mechani
     """
     # ── Step 1: parse each reaction into its 1:1 partial set ─────────────────
     reaction_partial_sets: list[list[dict]] = []
-    for rxn in reactions:
+    for rxn_index, rxn in enumerate(reactions):
         # ReactionToSmiles avoids [C&H3:n] SMARTS notation that evodex rejects.
         smirks = ReactionToSmiles(rxn)
         partials = _one_to_one_partials(smirks)
@@ -451,7 +484,8 @@ def generate_mechanistic_tree(reactions: list[ChemicalReaction]) -> list[Mechani
             p_rxn = AllChem.ReactionFromSmarts(p_smirks)
             if p_rxn is None:
                 continue
-            partial_set.append({'rxn': p_rxn, 'smirks': p_smirks, 'ops': ops})
+            partial_set.append({'rxn': p_rxn, 'smirks': p_smirks, 'ops': ops,
+                                'reaction_index': rxn_index})
         if partial_set:
             reaction_partial_sets.append(partial_set)
 

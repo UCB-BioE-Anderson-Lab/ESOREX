@@ -2,7 +2,8 @@ from rdkit import Chem
 from rdkit.Chem import rdChemReactions
 from typing import List, Dict, Tuple
 
-def label_substrate(substrate: Chem.Mol, operator: rdChemReactions.ChemicalReaction) -> List[Dict[str, List]]:
+def label_substrate(substrate: Chem.Mol, operator: rdChemReactions.ChemicalReaction,
+                    use_chirality: bool = True) -> List[Dict[str, List]]:
     """
     Identifies and annotates substructure matches of a reaction operator’s reactant pattern 
     within a single substrate molecule.
@@ -24,6 +25,15 @@ def label_substrate(substrate: Chem.Mol, operator: rdChemReactions.ChemicalReact
       - operator (rdkit.Chem.rdChemReactions.ChemicalReaction): A reaction operator containing 
         at least one reactant side with atom-mapped SMARTS used to identify possible substrate 
         matching locations.
+      - use_chirality (bool): enforce the operator's stereochemistry.  Operators extracted from
+        mapped reactions carry the reacting centre's configuration when the training reactions
+        had one, e.g. an L-amino-acid transaminase yields [#6@@:2] at every level.  RDKit
+        ignores chirality in substructure matching by default, which silently admits the mirror
+        image: D-phenylalanine matched an L-only operator and was priced as L-phenylalanine.
+        A query template that specifies no configuration is unaffected, so operators without
+        stereochemistry match as before.  Note that a substrate whose stereocentre is left
+        unspecified does NOT match a stereospecific operator: an unstated configuration cannot
+        be assumed to be the reactive one.
 
     Returns:
       List[Dict[str, List]]: A list where each element corresponds to one match, and contains:
@@ -37,7 +47,8 @@ def label_substrate(substrate: Chem.Mol, operator: rdChemReactions.ChemicalReact
     in chemical transformations, and filter by matched or excluded structural motifs.
     """
     operator_reactant = operator.GetReactants()[0]
-    matches = substrate.GetSubstructMatches(operator_reactant, uniquify=False)
+    matches = substrate.GetSubstructMatches(operator_reactant, uniquify=False,
+                                           useChirality=use_chirality)
 
     results = []
     all_indices = set(range(substrate.GetNumAtoms()))

@@ -19,7 +19,9 @@ fragments: populated only on A-level root nodes. Each entry is the output dict o
 label_reaction() applied to a 1:1 training partial with the matching Am complete
 operator. The 'unmatched_atoms' field in each dict identifies the passenger atoms
 (substrate atoms not covered by the operator), which are the training inputs for
-the specificity model.
+the specificity model.  Each entry also carries 'reaction_index', the position of the
+source reaction in the list passed to generate_mechanistic_tree, so measurements can be
+paired with fragments by identity rather than by fragment order.
 """
 
 from __future__ import annotations
