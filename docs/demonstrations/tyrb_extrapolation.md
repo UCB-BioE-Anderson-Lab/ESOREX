@@ -26,16 +26,19 @@ chain the active site must accommodate. That shared mechanistic core is the EVOD
 
 ![EVODEX levels A–E on phenylalanine](../../assets/demonstrations/tyrb/operator_levels.svg)
 
-*The operator at successively wider electronic scopes (A→E), drawn on phenylalanine. The E-level
-operator locks down the α-amino-acid backbone (a chiral carbon bearing an amino group, a
-carboxylate, and a side chain); the side chain is the passenger. All 23 substrates, and the 14
-held-out analogs, pass the E-level mechanistic pre-filter, so specificity, not feasibility, is
-what separates them.*
+*The operator at successively wider electronic scopes (A→E), drawn on phenylalanine. The level is a
+**screening** parameter: a wider scope demands more of a candidate's surroundings before it is judged
+feasible, and this demonstration screens at **D**. It does not move the boundary between reaction
+centre and passenger, which is set by the A-level centre, for TyrB the α-carbon alone, so everything
+else, the amine and the carboxylate included, is passenger and carries specificity weight. All 23
+measured substrates clear the D-level screen, so among them specificity, not feasibility, is what
+separates them.*
 
 ## The data
 
 Kinetic data (kf/KD) are from **[Onuffer & Kirsch, *Protein Science* 1995](https://pubmed.ncbi.nlm.nih.gov/8528072/)**,
-Table 2: 23 substrates measured under identical conditions across five orders of magnitude. The
+Table 2: 23 substrates measured under identical conditions, spanning more than seven orders of
+magnitude in rate (0.09 to 1.7 × 10⁶ M⁻¹s⁻¹). The
 training set is the **9 proteinogenic amino acids** with measured rates (Ala, Val, Leu, Asp, Glu,
 Arg, Phe, Tyr, Trp); the test set is the **14 unnatural analogs**, substituted phenylalanines,
 n-alkyl amino acids, cyclohexylalanine, and the non-proteinogenic diacid 2-aminoadipate. The test
@@ -71,9 +74,10 @@ supplied in advance, and read directly off real structures.
 ![What TyrB learned, painted on its substrates: four amino acids with each atom shaded by its learned free-energy contribution](../../assets/demonstrations/tyrb/ensemble.svg)
 
 *Four training substrates, each atom shaded by the free-energy contribution the model attributes to
-it (green lowers the activation energy and accelerates the reaction, red raises it and slows it); the
-α-amino-acid backbone in gray is the fixed reaction center. The geometry is the real 2D structure;
-the shading is computed from the constraint system's weights, not drawn by hand.*
+it (green lowers the activation energy and accelerates the reaction, red raises it and slows it). The
+α-carbon in gray is the reaction centre the operator locates; every other atom, the amine and the
+carboxylate included, is passenger. The geometry is the real 2D structure; the shading is computed
+from the constraint system's weights, not drawn by hand.*
 
 The dominant reward is bulk and aromaticity: every carbon of an aromatic ring lowers the activation
 energy, which is why Trp, Tyr, and Phe are the best substrates. The most telling distinction is
@@ -97,9 +101,9 @@ The model ranks the analogs well: held-out **Spearman ρ = 0.73** (0.77 without 
 point), most landing within a few-fold, a **median |log₁₀ error| ≈ 0.60** (≈ 4× in rate). One
 substrate, **2-aminooctanoate**, a long straight aliphatic chain, comes out badly wrong, predicted
 nearly 1000× too slow; it is the largest single miss. The model **flags** its predictions by
-provenance: the aromatic tyrosine-family analogs, whose para-hydroxyl has a training precedent in
-tyrosine, are *determined* and accurate; the aliphatic extrapolations, including 2-aminooctanoate,
-are marked as such.
+provenance. Only two of the fourteen come back *determined*, meaning every exact-fitting weighting of
+the training data agrees on them: 4-nitrophenylalanine and phosphotyrosine, each landing within about
+4×. The other twelve, 2-aminooctanoate among them, are extrapolations and are marked as such.
 
 ## Why it gets 2-aminooctanoate wrong
 
@@ -129,12 +133,33 @@ measurement. New data, even data that contradicts the model's prior extrapolatio
 nuanced without eroding it. That is the behavior a hard, constraint-based model is built to have: it
 never trades away a known fact to fit a new one, it widens the represented world to hold both.
 
+## What it refuses to predict
+
+Every substrate above is an α-amino acid, so a spread of intermediate rates can read as the model
+being vague, softly ranking things that were much the same to begin with. It is not. Before any
+energy is computed the candidate has to match one of the operators at the screening level, and if
+none matches, the enzyme's reaction cannot be written on it: the rate is **0**, not a small number.
+
+![Phenylalanine beside seven molecules the operators reject](../../assets/demonstrations/tyrb/feasibility.svg)
+
+*Phenylalanine and seven molecules one edit away from it. Six drop exactly one thing the reaction
+needs, the primary amine that condenses with PLP, the α-hydrogen that is abstracted, or the
+carboxyl. The seventh drops nothing at all: D-phenylalanine has every group in place and is refused
+on handedness alone, because the operators carry the reacting centre's configuration. All seven
+return rate 0; the shaded atom on phenylalanine is the centre the matched operator locates.*
+
+This is the half of specificity a rate cannot express. A model that only scores will always return
+some number, and the smaller it is the more it invites being read as a slow substrate. Here the
+boundary is categorical, and it is not learned from the nine measured rates: it is the mechanism the
+training reactions carry.
+
 ## What this shows
 
 From nine amino acids, ESOREX recovers the correct dominant determinant, a large aromatic side chain:
 reproduces the training exactly, predicts most novel analogs within a few-fold (held-out ρ = 0.73),
 and is explicit about the ones it cannot: it flags the aliphatic extrapolations rather than trusting
-them. Its blind spot is precisely where the training carries entangled signal (large-but-not-aromatic),
+them. Outside the mechanism it does not score at all, returning 0 for a molecule its operators
+reject, down to the mirror image of its best substrate. Its blind spot is precisely where the training carries entangled signal (large-but-not-aromatic),
 and adding the missing measurement resolves that case without cost to the rest. The full narrative,
 with the diagnostics and per-substrate provenance, is in the generated report at
 `experiments/transaminases/tyrb_energetic_report.html`.

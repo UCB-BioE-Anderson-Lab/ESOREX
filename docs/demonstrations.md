@@ -6,7 +6,7 @@ Selected case studies showing different aspects of ESOREX behavior. Each page wa
 
 ## [TyrB, reading an aminotransferase as free energy](demonstrations/tyrb_extrapolation.md)
 
-*E. coli* TyrB is a PLP-dependent aminotransferase with a strong preference for aromatic amino acid side chains. [Onuffer & Kirsch](https://pubmed.ncbi.nlm.nih.gov/8528072/) measured its activity against 23 substrates spanning five orders of magnitude under identical conditions, an unusually complete quantitative dataset.
+*E. coli* TyrB is a PLP-dependent aminotransferase with a strong preference for aromatic amino acid side chains. [Onuffer & Kirsch](https://pubmed.ncbi.nlm.nih.gov/8528072/) measured its activity against 23 substrates spanning more than seven orders of magnitude in rate under identical conditions, an unusually complete quantitative dataset.
 
 Training on just the 9 natural amino acids, the energetic model recovers what the active site rewards (a large aromatic side chain), exactly interpolates the training measurements, and predicts 14 unnatural analogs, most within a few-fold (held-out Spearman ρ ≈ 0.73; median |log₁₀ error| ≈ 0.60, i.e. about 4-fold). It is explicit about its clearest held-out failure, a long aliphatic side chain (2-aminooctanoate) it under-predicts, flagging it as extrapolation rather than trusting it; a second experiment feeds that outlier back into training and shows the model absorbs it exactly without eroding the rest.
 
